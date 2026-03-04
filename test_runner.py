@@ -1628,9 +1628,8 @@ The VKS cluster kubeconfig does not exist. You have two options:
         if '--context' in command or '--context=' in command:
             return command
         
-        # Skip if command already has --kubeconfig with a different file (like validation commands)
-        # that explicitly specify their own kubeconfig
-        if '--kubeconfig=' in command and self.current_kubeconfig not in command:
+        # Skip if command explicitly specifies --kubeconfig (it manages its own config)
+        if '--kubeconfig=' in command:
             return command
         
         # Skip if command sets KUBECONFIG env var (e.g., "KUBECONFIG=file kubectl ...")
@@ -1683,6 +1682,10 @@ The VKS cluster kubeconfig does not exist. You have two options:
         """Inject --insecure-skip-tls-verify flag into a single kubectl or helm command."""
         # Skip if already has insecure flag
         if '--insecure-skip-tls-verify' in command:
+            return command
+        
+        # Skip if command explicitly specifies --kubeconfig (it manages its own config)
+        if '--kubeconfig=' in command:
             return command
         
         # Skip if command sets KUBECONFIG env var (manages its own config)
