@@ -351,6 +351,20 @@ class TestConfig:
         if not self.storage_class:
             errors.append("cockroachdb.storage.class is required")
         
+        # Check that VKS kubeconfig is different from supervisor kubeconfig
+        # to prevent overwriting the supervisor config when extracting VKS kubeconfig
+        if self.vks_kubeconfig and self.supervisor_kubeconfig:
+            vks_path = Path(self.vks_kubeconfig).resolve()
+            sup_path = Path(self.supervisor_kubeconfig).resolve()
+            if vks_path == sup_path:
+                errors.append(
+                    f"vks_cluster.kubeconfig ({self.vks_kubeconfig}) must be different from "
+                    f"supervisor.kubeconfig ({self.supervisor_kubeconfig}). "
+                    f"The 00-VKS-CLUSTER test will extract the VKS kubeconfig to this file, "
+                    f"which would overwrite your supervisor kubeconfig. "
+                    f"Use a different path like 'vks-kubeconfig.yaml' for vks_cluster.kubeconfig."
+                )
+        
         return errors
 
 

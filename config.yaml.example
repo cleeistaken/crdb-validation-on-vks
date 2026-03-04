@@ -19,6 +19,9 @@ vks_cluster:
   name: "cluster-vks"                       # VKS cluster name
   namespace: "crdb-cluster"                 # Namespace for CockroachDB within VKS
   context: ""                               # Leave empty to use kubeconfig's current-context (recommended)
+  # IMPORTANT: This must be a DIFFERENT file from supervisor.kubeconfig!
+  # The 00-VKS-CLUSTER test extracts the VKS kubeconfig to this file.
+  # Using the same file as supervisor.kubeconfig will overwrite it!
   kubeconfig: "vks-kubeconfig.yaml"         # Path to VKS kubeconfig file (auto-created by 00-VKS-CLUSTER test)
   version: "v1.35.0+vmware.2-vkr.4"         # VKS Kubernetes version
   version_upgrade: "v1.36.0+vmware.1-vkr.1" # Target version for upgrade tests
