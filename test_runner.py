@@ -1314,6 +1314,191 @@ class TestRunner:
         with open(config_file, "w") as f:
             json.dump(self.config.to_env_dict(), f, indent=2)
     
+    def _check_kubeconfig_and_context(self, kubeconfig: str, context: str, cluster_name: str) -> tuple[bool, str]:
+        """
+        Check if kubeconfig file exists and context is valid.
+        Returns (success, error_message).
+        """
+        # Check if kubeconfig file exists
+        if kubeconfig and not Path(kubeconfig).exists():
+            return False, f"""
+Kubeconfig file not found: {kubeconfig}
+
+For {cluster_name}, please ensure the kubeconfig file exists.
+If using VMware vSphere, you may need to authenticate first:
+
+    kubectl vsphere login --server=<SUPERVISOR_IP> \\
+        --vsphere-username=<USERNAME> \\
+        --tanzu-kubernetes-cluster-namespace=<NAMESPACE>
+
+Or copy the kubeconfig from your vSphere environment.
+"""
+        
+        # Check if context exists in kubeconfig
+        if context:
+            env = os.environ.copy()
+            if kubeconfig:
+                env["KUBECONFIG"] = kubeconfig
+            
+            # Get available contexts
+            try:
+                result = subprocess.run(
+                    "kubectl config get-contexts -o name",
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    env=env
+                )
+                available_contexts = result.stdout.strip().split('\n') if result.stdout.strip() else []
+                
+                if context not in available_contexts:
+                    contexts_list = '\n    '.join(available_contexts) if available_contexts else '(none found)'
+                    return False, f"""
+Context '{context}' not found in kubeconfig: {kubeconfig or '(default)'}
+
+Available contexts:
+    {contexts_list}
+
+For {cluster_name}, you may need to authenticate:
+
+    # For VMware vSphere Supervisor:
+    kubectl vsphere login --server={self.config.supervisor_ip} \\
+        --vsphere-username={self.config.supervisor_username} \\
+        --tanzu-kubernetes-cluster-namespace={self.config.supervisor_namespace}
+
+    # This will create/update contexts in your kubeconfig.
+    # After login, verify with:
+    kubectl config get-contexts
+
+If the context name is different, update your config.yaml with the correct context name.
+"""
+            except subprocess.TimeoutExpired:
+                return False, f"Timeout checking contexts in kubeconfig: {kubeconfig}"
+            except Exception as e:
+                return False, f"Error checking kubeconfig: {e}"
+        
+        # Verify we can connect to the cluster
+        if context:
+            env = os.environ.copy()
+            if kubeconfig:
+                env["KUBECONFIG"] = kubeconfig
+            
+            cmd = f"kubectl --context={context}"
+            if self.config.supervisor_insecure_skip_tls if cluster_name == "supervisor" else self.config.vks_insecure_skip_tls:
+                cmd += " --insecure-skip-tls-verify"
+            cmd += " cluster-info --request-timeout=10s"
+            
+            try:
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    env=env
+                )
+                if result.returncode != 0:
+                    error_msg = result.stderr.strip()
+                    # Check for common auth errors
+                    if "Unauthorized" in error_msg or "forbidden" in error_msg.lower():
+                        return False, f"""
+Authentication failed for {cluster_name} (context: {context})
+
+Error: {error_msg}
+
+Your credentials may have expired. Please re-authenticate:
+
+    kubectl vsphere login --server={self.config.supervisor_ip} \\
+        --vsphere-username={self.config.supervisor_username} \\
+        --tanzu-kubernetes-cluster-namespace={self.config.supervisor_namespace}
+"""
+                    elif "connection refused" in error_msg.lower() or "no such host" in error_msg.lower():
+                        return False, f"""
+Cannot connect to {cluster_name} cluster (context: {context})
+
+Error: {error_msg}
+
+Please verify:
+1. The cluster is running and accessible
+2. Network connectivity to the cluster
+3. The kubeconfig has the correct server address
+"""
+                    else:
+                        # Non-fatal warning - cluster might not be deployed yet
+                        self.logger.warning(f"  Warning: Could not verify {cluster_name} connection: {error_msg}")
+            except subprocess.TimeoutExpired:
+                self.logger.warning(f"  Warning: Timeout connecting to {cluster_name} cluster")
+            except Exception as e:
+                self.logger.warning(f"  Warning: Error checking {cluster_name} connection: {e}")
+        
+        return True, ""
+    
+    def validate_cluster_access(self, tests: list) -> bool:
+        """
+        Validate access to required clusters before running tests.
+        Returns True if all validations pass.
+        """
+        self.logger.info("Validating cluster access...")
+        
+        # Determine which clusters we need access to
+        need_supervisor = any(t.target_cluster == "supervisor" for t in tests)
+        need_vks = any(t.target_cluster == "vks" for t in tests)
+        
+        all_valid = True
+        
+        # Check supervisor access
+        if need_supervisor:
+            self.logger.info("  Checking supervisor cluster access...")
+            success, error = self._check_kubeconfig_and_context(
+                self.supervisor_kubeconfig,
+                self.config.supervisor_context,
+                "supervisor"
+            )
+            if not success:
+                self.logger.error(error)
+                all_valid = False
+            else:
+                self.logger.info("  Supervisor cluster: OK")
+        
+        # Check VKS access (only if VKS kubeconfig exists - it may be created by 00-VKS-CLUSTER)
+        if need_vks:
+            # Check if any VKS test is being run WITHOUT 00-VKS-CLUSTER
+            vks_cluster_test_included = any(t.test_id == "00-VKS-CLUSTER" for t in tests)
+            
+            if not vks_cluster_test_included:
+                # VKS kubeconfig should already exist
+                self.logger.info("  Checking VKS cluster access...")
+                if not Path(self.vks_kubeconfig).exists():
+                    self.logger.error(f"""
+VKS kubeconfig not found: {self.vks_kubeconfig}
+
+The VKS cluster kubeconfig does not exist. You have two options:
+
+1. Run the 00-VKS-CLUSTER test first to deploy and get the kubeconfig:
+   python test_runner.py --config config.yaml --test 00-VKS-CLUSTER
+
+2. If the VKS cluster already exists, extract the kubeconfig manually:
+   kubectl --context={self.config.supervisor_context} get secret {self.config.vks_cluster_name}-kubeconfig \\
+       -n {self.config.supervisor_namespace} -o jsonpath='{{.data.value}}' | base64 -d > {self.vks_kubeconfig}
+""")
+                    all_valid = False
+                else:
+                    success, error = self._check_kubeconfig_and_context(
+                        self.vks_kubeconfig,
+                        self.config.vks_cluster_context,
+                        "VKS cluster"
+                    )
+                    if not success:
+                        self.logger.error(error)
+                        all_valid = False
+                    else:
+                        self.logger.info("  VKS cluster: OK")
+            else:
+                self.logger.info("  VKS cluster: Will be created by 00-VKS-CLUSTER test")
+        
+        return all_valid
+    
     def _run_command(self, command: str, timeout: int = 300) -> tuple[int, str, str]:
         """Run a shell command and return exit code, stdout, stderr."""
         env = os.environ.copy()
@@ -1590,10 +1775,17 @@ class TestRunner:
         
         return result
     
-    def run_tests(self, tests: list[TestDefinition]) -> list[TestResult]:
+    def run_tests(self, tests: list[TestDefinition], skip_validation: bool = False) -> list[TestResult]:
         """Run a list of tests."""
         self.logger.info(f"Starting test run with {len(tests)} tests")
         self.logger.info(f"Results directory: {self.results_dir}")
+        
+        # Validate cluster access before running tests (unless dry-run or skip requested)
+        if not self.dry_run and not skip_validation:
+            if not self.validate_cluster_access(tests):
+                self.logger.error("\nCluster access validation failed. Please fix the issues above and try again.")
+                self.logger.error("Use --skip-validation to bypass this check (not recommended).\n")
+                return []
         
         for test in tests:
             result = self._run_test(test)
@@ -1899,6 +2091,11 @@ Examples:
         action="store_true",
         help="Enable verbose output"
     )
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Skip cluster access validation before running tests"
+    )
     
     args = parser.parse_args()
     
@@ -2046,9 +2243,11 @@ Examples:
         verbose=args.verbose
     )
     
-    results = runner.run_tests(tests_to_run)
+    results = runner.run_tests(tests_to_run, skip_validation=args.skip_validation)
     
-    # Return non-zero if any tests failed
+    # Return non-zero if any tests failed or validation failed (empty results)
+    if not results:
+        return 1
     failed = sum(1 for r in results if r.status == TestStatus.FAILED)
     return 1 if failed > 0 else 0
 
