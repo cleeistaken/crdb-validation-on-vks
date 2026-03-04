@@ -1,0 +1,16 @@
+Test: VKS-01 - Install CockroachDB Operator via Helm
+Category: cluster-provisioning
+Status: skipped
+Duration: 0.00s
+Steps: 3/3 passed
+
+============================================================
+
+=== Step 1: Create operator namespace ===
+Command: kubectl create namespace crdb-operator --dry-run=client -o yaml | kubectl apply -f -
+
+=== Step 2: Install operator via Helm ===
+Command: helm install crdb-operator ./cockroachdb-parent/charts/operator -n crdb-operator --wait --timeout 5m
+
+=== Step 3: Wait for operator pods ===
+Command: kubectl wait --for=condition=Ready pods --all -n crdb-operator --timeout=300s

@@ -1,0 +1,16 @@
+Test: VKS-02 - Install CockroachDB Cluster via Helm
+Category: cluster-provisioning
+Status: skipped
+Duration: 0.00s
+Steps: 3/3 passed
+
+============================================================
+
+=== Step 1: Create cluster namespace ===
+Command: kubectl create namespace crdb-cluster --dry-run=client -o yaml | kubectl apply -f -
+
+=== Step 2: Install CockroachDB via Helm ===
+Command: helm install cockroachdb ./cockroachdb-parent/charts/cockroachdb -n crdb-cluster --set storage.persistentVolume.storageClass=vsan-esa-default-policy-raid5 --wait --timeout 10m
+
+=== Step 3: Wait for all pods ready ===
+Command: kubectl wait --for=condition=Ready pods --all -n crdb-cluster --timeout=600s

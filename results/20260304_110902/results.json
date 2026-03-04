@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-03-04T11:09:02.777200",
+  "summary": {
+    "total": 2,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 2,
+    "errors": 0,
+    "duration_seconds": 0.001176,
+    "pass_rate": 0.0
+  },
+  "results": [
+    {
+      "test_id": "VKS-01",
+      "test_name": "Install CockroachDB Operator via Helm",
+      "category": "cluster-provisioning",
+      "status": "skipped",
+      "start_time": "2026-03-04T11:09:02.773788",
+      "end_time": "2026-03-04T11:09:02.774236",
+      "duration_seconds": 0.000448,
+      "steps_passed": 3,
+      "steps_failed": 0,
+      "steps_total": 3,
+      "failure_reason": null,
+      "failure_step": null
+    },
+    {
+      "test_id": "VKS-02",
+      "test_name": "Install CockroachDB Cluster via Helm",
+      "category": "cluster-provisioning",
+      "status": "skipped",
+      "start_time": "2026-03-04T11:09:02.774970",
+      "end_time": "2026-03-04T11:09:02.775698",
+      "duration_seconds": 0.000728,
+      "steps_passed": 3,
+      "steps_failed": 0,
+      "steps_total": 3,
+      "failure_reason": null,
+      "failure_step": null
+    }
+  ]
+}
