@@ -49,7 +49,7 @@ class TestConfig:
     # VKS cluster configuration
     vks_cluster_name: str = "cluster-vks"
     vks_cluster_namespace: str = "crdb-cluster"
-    vks_cluster_context: str = ""
+    vks_cluster_context: str = "vks-cluster"  # Context name for the VKS cluster kubeconfig
     vks_kubeconfig: str = "vks-kubeconfig.yaml"
     vks_version: str = "v1.35.0+vmware.2-vkr.4"
     vks_version_upgrade: str = ""
@@ -146,7 +146,7 @@ class TestConfig:
             vks = data["vks_cluster"]
             config.vks_cluster_name = vks.get("name", "cluster-vks")
             config.vks_cluster_namespace = vks.get("namespace", "crdb-cluster")
-            config.vks_cluster_context = vks.get("context", "")
+            config.vks_cluster_context = vks.get("context", "vks-cluster")
             config.vks_kubeconfig = vks.get("kubeconfig", "vks-kubeconfig.yaml")
             config.vks_version = vks.get("version", "v1.35.0+vmware.2-vkr.4")
             config.vks_version_upgrade = vks.get("version_upgrade", "")
@@ -481,10 +481,20 @@ class TestRegistry:
                     command=f"kubectl get secret {cfg.vks_cluster_name}-kubeconfig -n {sup_ns} -o jsonpath='{{.data.value}}' | base64 -d > {cfg.vks_kubeconfig}",
                     timeout=30
                 ),
+                TestStep(
+                    name="Set VKS kubeconfig context",
+                    command=f"bash -c 'export KUBECONFIG={cfg.vks_kubeconfig}; CURRENT=$(kubectl config current-context); if [ \"$CURRENT\" != \"{cfg.vks_cluster_context}\" ]; then kubectl config delete-context {cfg.vks_cluster_context} 2>/dev/null || true; kubectl config rename-context \"$CURRENT\" {cfg.vks_cluster_context}; fi; kubectl config use-context {cfg.vks_cluster_context}'",
+                    timeout=30
+                ),
+                TestStep(
+                    name="Verify VKS cluster access",
+                    command=f"kubectl --kubeconfig={cfg.vks_kubeconfig} --context={cfg.vks_cluster_context} get nodes",
+                    timeout=60
+                ),
             ],
             validation_commands=[
-                f"kubectl --kubeconfig={cfg.vks_kubeconfig} get nodes",
-                f"kubectl --kubeconfig={cfg.vks_kubeconfig} cluster-info",
+                f"kubectl --kubeconfig={cfg.vks_kubeconfig} --context={cfg.vks_cluster_context} get nodes",
+                f"kubectl --kubeconfig={cfg.vks_kubeconfig} --context={cfg.vks_cluster_context} cluster-info",
             ]
         )
     
