@@ -22,9 +22,14 @@ Before running this test, authenticate to the Supervisor cluster:
 
 ```bash
 # VCF 9.0+ (using vcf CLI):
+# 1. Create supervisor context (will prompt for password):
 vcf context create <SUPERVISOR_CONTEXT> \
     --endpoint <SUPERVISOR_IP> \
-    --username <USERNAME>
+    --insecure-skip-tls-verify \
+    --type k8s
+
+# 2. Use the context:
+vcf context use <SUPERVISOR_CONTEXT>
 
 # Legacy method (vSphere 8.x / VCF 5.x):
 kubectl vsphere login --server=<SUPERVISOR_IP> \
@@ -33,6 +38,8 @@ kubectl vsphere login --server=<SUPERVISOR_IP> \
 
 # Verify authentication
 kubectl config get-contexts
+# Or for VCF CLI contexts:
+vcf context list
 ```
 
 ## Environment Setup

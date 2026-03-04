@@ -135,9 +135,17 @@ Before running tests, authenticate to the vSphere Supervisor cluster:
 
 ```bash
 # VCF 9.0+ (using vcf CLI):
+# 1. Create supervisor context (will prompt for password):
 vcf context create <SUPERVISOR_CONTEXT> \
     --endpoint <SUPERVISOR_IP> \
-    --username <USERNAME>
+    --insecure-skip-tls-verify \
+    --type k8s
+
+# 2. Use the context:
+vcf context use <SUPERVISOR_CONTEXT>
+
+# 3. Export kubeconfig for kubectl usage (after VKS cluster is deployed):
+vcf cluster kubeconfig get <CLUSTER_NAME> --export-file ~/.kube/config
 
 # Legacy method (vSphere 8.x / VCF 5.x):
 kubectl vsphere login --server=<SUPERVISOR_IP> \
@@ -146,9 +154,11 @@ kubectl vsphere login --server=<SUPERVISOR_IP> \
 
 # Verify authentication
 kubectl config get-contexts
+# Or for VCF CLI contexts:
+vcf context list
 ```
 
-For more info on VCF CLI: https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-0/building-your-cloud-applications/getting-started-with-the-tools-for-building-applications/installing-and-using-vcf-cli-v9.html
+For more info on VCF CLI: https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-0/building-your-cloud-applications/getting-started-with-the-tools-for-building-applications/installing-and-using-vcf-cli-v9/vcf-cli-architecture.html
 
 ### Step 1-4: Deploy and Access VKS Cluster
 

@@ -1328,9 +1328,17 @@ For {cluster_name}, please ensure the kubeconfig file exists.
 You may need to authenticate first using one of these methods:
 
     # VCF 9.0+ (using vcf CLI):
+    # 1. Create supervisor context (will prompt for password):
     vcf context create {self.config.supervisor_context} \\
         --endpoint {self.config.supervisor_ip} \\
-        --username {self.config.supervisor_username}
+        --insecure-skip-tls-verify \\
+        --type k8s
+
+    # 2. Use the context:
+    vcf context use {self.config.supervisor_context}
+
+    # 3. Export kubeconfig for kubectl usage:
+    vcf cluster kubeconfig get <CLUSTER_NAME> --export-file {kubeconfig}
 
     # Legacy method (vSphere 8.x / VCF 5.x):
     kubectl vsphere login --server={self.config.supervisor_ip} \\
@@ -1339,8 +1347,10 @@ You may need to authenticate first using one of these methods:
 
 After login, verify your contexts with:
     kubectl config get-contexts
+    # Or for VCF CLI contexts:
+    vcf context list
 
-For more info on VCF CLI: https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-0/building-your-cloud-applications/getting-started-with-the-tools-for-building-applications/installing-and-using-vcf-cli-v9.html
+For more info: https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-0/building-your-cloud-applications/getting-started-with-the-tools-for-building-applications/installing-and-using-vcf-cli-v9/vcf-cli-architecture.html
 """
         
         # Check if context exists in kubeconfig
@@ -1372,9 +1382,17 @@ Available contexts:
 For {cluster_name}, you may need to authenticate:
 
     # VCF 9.0+ (using vcf CLI):
+    # 1. Create supervisor context (will prompt for password):
     vcf context create {self.config.supervisor_context} \\
         --endpoint {self.config.supervisor_ip} \\
-        --username {self.config.supervisor_username}
+        --insecure-skip-tls-verify \\
+        --type k8s
+
+    # 2. Use the context:
+    vcf context use {self.config.supervisor_context}
+
+    # 3. Export kubeconfig for kubectl usage:
+    vcf cluster kubeconfig get <CLUSTER_NAME> --export-file {kubeconfig or '~/.kube/config'}
 
     # Legacy method (vSphere 8.x / VCF 5.x):
     kubectl vsphere login --server={self.config.supervisor_ip} \\
@@ -1383,11 +1401,13 @@ For {cluster_name}, you may need to authenticate:
 
 After login, verify your contexts with:
     kubectl config get-contexts
+    # Or for VCF CLI contexts:
+    vcf context list
 
 If the context name is different from what you specified in config.yaml,
 update the 'context' field with the correct name from the list above.
 
-For more info on VCF CLI: https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-0/building-your-cloud-applications/getting-started-with-the-tools-for-building-applications/installing-and-using-vcf-cli-v9.html
+For more info: https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-0/building-your-cloud-applications/getting-started-with-the-tools-for-building-applications/installing-and-using-vcf-cli-v9/vcf-cli-architecture.html
 """
             except subprocess.TimeoutExpired:
                 return False, f"Timeout checking contexts in kubeconfig: {kubeconfig}"
@@ -1428,7 +1448,9 @@ Your credentials may have expired. Please re-authenticate:
     # VCF 9.0+ (using vcf CLI):
     vcf context create {self.config.supervisor_context} \\
         --endpoint {self.config.supervisor_ip} \\
-        --username {self.config.supervisor_username}
+        --insecure-skip-tls-verify \\
+        --type k8s
+    vcf context use {self.config.supervisor_context}
 
     # Legacy method (vSphere 8.x / VCF 5.x):
     kubectl vsphere login --server={self.config.supervisor_ip} \\
