@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-03-04T11:24:19.460021",
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 1,
+    "errors": 0,
+    "duration_seconds": 0.000942,
+    "pass_rate": 0.0
+  },
+  "results": [
+    {
+      "test_id": "VKS-10",
+      "test_name": "Patch Upgrade",
+      "category": "upgrades",
+      "status": "skipped",
+      "start_time": "2026-03-04T11:24:19.454274",
+      "end_time": "2026-03-04T11:24:19.455216",
+      "duration_seconds": 0.000942,
+      "steps_passed": 3,
+      "steps_failed": 0,
+      "steps_total": 3,
+      "failure_reason": null,
+      "failure_step": null
+    }
+  ]
+}

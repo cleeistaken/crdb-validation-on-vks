@@ -1,0 +1,16 @@
+Test: VKS-10 - Patch Upgrade
+Category: upgrades
+Status: skipped
+Duration: 0.00s
+Steps: 3/3 passed
+
+============================================================
+
+=== Step 1: Get current version ===
+Command: kubectl exec -n crdb-cluster cockroachdb-0 -- cockroach version
+
+=== Step 2: Upgrade to patch version ===
+Command: helm upgrade cockroachdb ./cockroachdb-parent/charts/cockroachdb -n crdb-cluster --reuse-values --set image.tag=v24.2.1 --wait --timeout 30m
+
+=== Step 3: Wait for rolling restart ===
+Command: kubectl rollout status statefulset/cockroachdb -n crdb-cluster --timeout=1800s

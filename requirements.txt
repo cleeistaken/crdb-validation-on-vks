@@ -1,2 +1,2 @@
 # CockroachDB VKS Test Runner Requirements
-# No external dependencies required - uses Python standard library only
+PyYAML>=6.0

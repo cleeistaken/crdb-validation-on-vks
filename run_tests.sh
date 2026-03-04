@@ -5,9 +5,10 @@
 # This script provides a convenient wrapper around test_runner.py
 #
 # Usage:
-#   ./run_tests.sh                    # Run all tests
-#   ./run_tests.sh --test VKS-01      # Run single test
-#   ./run_tests.sh --help             # Show help
+#   ./run_tests.sh --config config.yaml           # Run all tests with config
+#   ./run_tests.sh --config config.yaml --test VKS-01  # Run single test
+#   ./run_tests.sh --generate-config              # Generate sample config
+#   ./run_tests.sh --help                         # Show help
 #
 
 set -e
@@ -29,6 +30,12 @@ if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$PYTHON_VERSION" | sort -V | head -n1
     exit 1
 fi
 
+# Check for PyYAML
+if ! python3 -c "import yaml" 2>/dev/null; then
+    echo "Installing required Python packages..."
+    pip3 install -r requirements.txt --quiet
+fi
+
 # Check kubectl
 if ! command -v kubectl &> /dev/null; then
     echo "Error: kubectl is required but not installed"
@@ -41,10 +48,40 @@ if ! command -v helm &> /dev/null; then
     exit 1
 fi
 
-# Set default kubeconfig if not set
-if [ -z "$KUBECONFIG" ] && [ -f "vks-kubeconfig.yaml" ]; then
-    export KUBECONFIG="$SCRIPT_DIR/vks-kubeconfig.yaml"
-    echo "Using kubeconfig: $KUBECONFIG"
+# Check for config file if running tests
+CONFIG_FILE=""
+for arg in "$@"; do
+    if [[ "$arg" == "--config" ]] || [[ "$arg" == "-f" ]]; then
+        CONFIG_NEXT=true
+    elif [[ "$CONFIG_NEXT" == "true" ]]; then
+        CONFIG_FILE="$arg"
+        CONFIG_NEXT=false
+    fi
+done
+
+# If config file specified, check it exists
+if [[ -n "$CONFIG_FILE" ]] && [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: Configuration file not found: $CONFIG_FILE"
+    echo "Run './run_tests.sh --generate-config' to create a sample configuration"
+    exit 1
+fi
+
+# If no config specified and not a list/help/generate command, check for default
+if [[ -z "$CONFIG_FILE" ]]; then
+    case "$*" in
+        *--list*|*--help*|*-h*|*--generate-config*|*--show-config*|*--validate-config*)
+            # These commands don't need a config file
+            ;;
+        *)
+            if [[ -f "config.yaml" ]]; then
+                echo "Using default configuration: config.yaml"
+            else
+                echo "Warning: No configuration file specified."
+                echo "Use --config <file> or create config.yaml"
+                echo "Run './run_tests.sh --generate-config' to create a sample configuration"
+            fi
+            ;;
+    esac
 fi
 
 # Run the test runner
