@@ -10,6 +10,7 @@ supervisor:
   namespace: "vks-namespace"                # Supervisor namespace for VKS cluster
   context: "supervisor-context"             # kubectl context name for supervisor
   kubeconfig: "/path/to/supervisor-kubeconfig.yaml"  # Path to supervisor kubeconfig file
+  insecure_skip_tls_verify: true            # Skip TLS certificate verification (for self-signed certs)
 
 # =============================================================================
 # VKS Cluster Configuration
@@ -21,6 +22,7 @@ vks_cluster:
   kubeconfig: "vks-kubeconfig.yaml"         # Path to VKS kubeconfig file
   version: "v1.35.0+vmware.2-vkr.4"         # VKS Kubernetes version
   version_upgrade: "v1.36.0+vmware.1-vkr.1" # Target version for upgrade tests
+  insecure_skip_tls_verify: false           # Skip TLS certificate verification
 
 # =============================================================================
 # CockroachDB Operator Configuration

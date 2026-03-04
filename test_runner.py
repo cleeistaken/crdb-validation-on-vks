@@ -44,6 +44,7 @@ class TestConfig:
     supervisor_namespace: str = ""
     supervisor_context: str = ""
     supervisor_kubeconfig: str = ""  # Path to supervisor kubeconfig
+    supervisor_insecure_skip_tls: bool = False  # Skip TLS verification for supervisor
     
     # VKS cluster configuration
     vks_cluster_name: str = "cluster-vks"
@@ -52,6 +53,7 @@ class TestConfig:
     vks_kubeconfig: str = "vks-kubeconfig.yaml"
     vks_version: str = "v1.35.0+vmware.2-vkr.4"
     vks_version_upgrade: str = ""
+    vks_insecure_skip_tls: bool = False  # Skip TLS verification for VKS cluster
     
     # Operator configuration
     operator_namespace: str = "crdb-operator"
@@ -137,6 +139,7 @@ class TestConfig:
             config.supervisor_namespace = sup.get("namespace", "")
             config.supervisor_context = sup.get("context", "")
             config.supervisor_kubeconfig = sup.get("kubeconfig", "")
+            config.supervisor_insecure_skip_tls = sup.get("insecure_skip_tls_verify", False)
         
         # VKS Cluster
         if "vks_cluster" in data:
@@ -147,6 +150,7 @@ class TestConfig:
             config.vks_kubeconfig = vks.get("kubeconfig", "vks-kubeconfig.yaml")
             config.vks_version = vks.get("version", "v1.35.0+vmware.2-vkr.4")
             config.vks_version_upgrade = vks.get("version_upgrade", "")
+            config.vks_insecure_skip_tls = vks.get("insecure_skip_tls_verify", False)
         
         # Operator
         if "operator" in data:
@@ -253,6 +257,7 @@ class TestConfig:
             "SUPERVISOR_NAMESPACE": self.supervisor_namespace,
             "SUPERVISOR_CONTEXT": self.supervisor_context,
             "SUPERVISOR_KUBECONFIG": self.supervisor_kubeconfig,
+            "SUPERVISOR_INSECURE_SKIP_TLS": str(self.supervisor_insecure_skip_tls).lower(),
             
             # VKS Cluster
             "VKS_CLUSTER_NAME": self.vks_cluster_name,
@@ -261,6 +266,7 @@ class TestConfig:
             "VKS_KUBECONFIG": self.vks_kubeconfig,
             "VKS_VERSION": self.vks_version,
             "VKS_VERSION_UPGRADE": self.vks_version_upgrade,
+            "VKS_INSECURE_SKIP_TLS": str(self.vks_insecure_skip_tls).lower(),
             
             # Operator
             "CRDB_OPERATOR_NS": self.operator_namespace,
@@ -1253,9 +1259,10 @@ class TestRunner:
         self.vks_kubeconfig = kubeconfig or self.config.vks_kubeconfig or os.environ.get("KUBECONFIG", "vks-kubeconfig.yaml")
         self.supervisor_kubeconfig = self.config.supervisor_kubeconfig or os.environ.get("SUPERVISOR_KUBECONFIG", "")
         
-        # Current kubeconfig and context (will be switched based on test target)
+        # Current kubeconfig, context, and TLS settings (will be switched based on test target)
         self.current_kubeconfig = self.vks_kubeconfig
         self.current_context: Optional[str] = None
+        self.current_insecure_skip_tls: bool = False
         
         # Create results directory with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1315,10 +1322,8 @@ class TestRunner:
         if self.current_kubeconfig:
             env["KUBECONFIG"] = self.current_kubeconfig
         
-        # If we have a context set, inject it into kubectl/helm commands
-        actual_command = command
-        if self.current_context:
-            actual_command = self._inject_context(command, self.current_context)
+        # Process the command: inject context and insecure flags
+        actual_command = self._process_command(command)
         
         try:
             result = subprocess.run(
@@ -1334,6 +1339,15 @@ class TestRunner:
             return -1, "", f"Command timed out after {timeout} seconds"
         except Exception as e:
             return -1, "", str(e)
+    
+    def _process_command(self, command: str) -> str:
+        """Process command to inject context and insecure flags."""
+        result = command
+        if self.current_context:
+            result = self._inject_context(result, self.current_context)
+        if self.current_insecure_skip_tls:
+            result = self._inject_insecure_flag(result)
+        return result
     
     def _inject_context(self, command: str, context: str) -> str:
         """Inject --context flag into kubectl and helm commands."""
@@ -1382,23 +1396,86 @@ class TestRunner:
         
         return command
     
+    def _inject_insecure_flag(self, command: str) -> str:
+        """Inject --insecure-skip-tls-verify flag into kubectl and helm commands."""
+        # Handle piped commands
+        if '|' in command:
+            parts = command.split('|')
+            processed_parts = [self._inject_insecure_flag_single(p.strip()) for p in parts]
+            return ' | '.join(processed_parts)
+        
+        # Handle && chained commands
+        if '&&' in command:
+            parts = command.split('&&')
+            processed_parts = [self._inject_insecure_flag_single(p.strip()) for p in parts]
+            return ' && '.join(processed_parts)
+        
+        return self._inject_insecure_flag_single(command)
+    
+    def _inject_insecure_flag_single(self, command: str) -> str:
+        """Inject --insecure-skip-tls-verify flag into a single kubectl or helm command."""
+        # Skip if already has insecure flag
+        if '--insecure-skip-tls-verify' in command:
+            return command
+        
+        # Inject for kubectl commands (after kubectl and any --context flag)
+        if command.strip().startswith('kubectl '):
+            # Find position after 'kubectl ' and any existing flags like --context
+            if '--context=' in command:
+                # Insert after --context=xxx
+                parts = command.split(' ', 2)
+                if len(parts) >= 2:
+                    # Find the --context part
+                    for i, part in enumerate(command.split(' ')):
+                        if part.startswith('--context='):
+                            idx = command.find(part) + len(part)
+                            return command[:idx] + ' --insecure-skip-tls-verify' + command[idx:]
+            # Insert right after 'kubectl '
+            return command.replace('kubectl ', 'kubectl --insecure-skip-tls-verify ', 1)
+        
+        # Inject for helm commands
+        if command.strip().startswith('helm '):
+            if '--kube-context=' in command:
+                for part in command.split(' '):
+                    if part.startswith('--kube-context='):
+                        idx = command.find(part) + len(part)
+                        return command[:idx] + ' --kube-insecure-skip-tls-verify' + command[idx:]
+            return command.replace('helm ', 'helm --kube-insecure-skip-tls-verify ', 1)
+        
+        # Handle bash -c commands
+        if command.strip().startswith('bash -c'):
+            inner_start = command.find("'") + 1
+            inner_end = command.rfind("'")
+            if inner_start > 0 and inner_end > inner_start:
+                inner_cmd = command[inner_start:inner_end]
+                processed_inner = self._inject_insecure_flag(inner_cmd)
+                return f"bash -c '{processed_inner}'"
+        
+        return command
+    
     def _set_target_cluster(self, target: str):
         """Set the target cluster for kubectl commands."""
         if target == "supervisor":
             self.current_kubeconfig = self.supervisor_kubeconfig or None
             self.current_context = self.config.supervisor_context or None
+            self.current_insecure_skip_tls = self.config.supervisor_insecure_skip_tls
             if self.current_kubeconfig:
                 self.logger.info(f"  Using supervisor kubeconfig: {self.current_kubeconfig}")
             if self.current_context:
                 self.logger.info(f"  Using supervisor context: {self.current_context}")
+            if self.current_insecure_skip_tls:
+                self.logger.info(f"  TLS verification: DISABLED (insecure)")
             if not self.current_kubeconfig and not self.current_context:
                 self.logger.warning("  No supervisor kubeconfig or context configured")
         else:
             self.current_kubeconfig = self.vks_kubeconfig
             self.current_context = self.config.vks_cluster_context or None
+            self.current_insecure_skip_tls = self.config.vks_insecure_skip_tls
             self.logger.info(f"  Using VKS kubeconfig: {self.current_kubeconfig}")
             if self.current_context:
                 self.logger.info(f"  Using VKS context: {self.current_context}")
+            if self.current_insecure_skip_tls:
+                self.logger.info(f"  TLS verification: DISABLED (insecure)")
     
     def _run_test(self, test: TestDefinition) -> TestResult:
         """Execute a single test."""
@@ -1432,10 +1509,8 @@ class TestRunner:
             for i, step in enumerate(test.steps):
                 self.logger.info(f"  Step {i+1}/{len(test.steps)}: {step.name}")
                 
-                # Get the actual command that will be executed (with context injected)
-                actual_command = step.command
-                if self.current_context:
-                    actual_command = self._inject_context(step.command, self.current_context)
+                # Get the actual command that will be executed (with context and insecure flags)
+                actual_command = self._process_command(step.command)
                 
                 all_output.append(f"\n=== Step {i+1}: {step.name} ===\n")
                 all_output.append(f"Command: {actual_command}\n")
@@ -1640,6 +1715,7 @@ supervisor:
   namespace: "vks-namespace"                # Supervisor namespace for VKS cluster
   context: "supervisor-context"             # kubectl context name for supervisor
   kubeconfig: "/path/to/supervisor-kubeconfig.yaml"  # Path to supervisor kubeconfig
+  insecure_skip_tls_verify: true            # Skip TLS verification (for self-signed certs)
 
 # VKS Cluster Configuration
 vks_cluster:
@@ -1649,6 +1725,7 @@ vks_cluster:
   kubeconfig: "vks-kubeconfig.yaml"         # Path to VKS kubeconfig file
   version: "v1.35.0+vmware.2-vkr.4"         # VKS Kubernetes version
   version_upgrade: "v1.36.0+vmware.1-vkr.1" # Target version for upgrade tests
+  insecure_skip_tls_verify: false           # Skip TLS verification
 
 # CockroachDB Operator Configuration
 operator:
