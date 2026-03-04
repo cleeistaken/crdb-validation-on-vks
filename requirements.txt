@@ -1,2 +1,0 @@
-# CockroachDB VKS Test Runner Requirements
-PyYAML>=6.0

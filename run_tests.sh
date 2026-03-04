@@ -2,13 +2,13 @@
 #
 # CockroachDB Operator VKS Test Runner Wrapper
 #
-# This script provides a convenient wrapper around test_runner.py
-#
 # Usage:
-#   ./run_tests.sh --config config.yaml           # Run all tests with config
-#   ./run_tests.sh --config config.yaml --test VKS-01  # Run single test
-#   ./run_tests.sh --generate-config              # Generate sample config
-#   ./run_tests.sh --help                         # Show help
+#   ./run_tests.sh --list                    # List all tests
+#   ./run_tests.sh --test VKS-01             # Run single test
+#   ./run_tests.sh --test VKS-01 VKS-02      # Run multiple tests
+#   ./run_tests.sh --all                     # Run all tests
+#   ./run_tests.sh --dry-run --test VKS-01   # Dry run
+#   ./run_tests.sh --help                    # Show help
 #
 
 set -e
@@ -30,12 +30,6 @@ if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$PYTHON_VERSION" | sort -V | head -n1
     exit 1
 fi
 
-# Check for PyYAML
-if ! python3 -c "import yaml" 2>/dev/null; then
-    echo "Installing required Python packages..."
-    pip3 install -r requirements.txt --quiet
-fi
-
 # Check kubectl
 if ! command -v kubectl &> /dev/null; then
     echo "Error: kubectl is required but not installed"
@@ -48,41 +42,24 @@ if ! command -v helm &> /dev/null; then
     exit 1
 fi
 
-# Check for config file if running tests
-CONFIG_FILE=""
-for arg in "$@"; do
-    if [[ "$arg" == "--config" ]] || [[ "$arg" == "-f" ]]; then
-        CONFIG_NEXT=true
-    elif [[ "$CONFIG_NEXT" == "true" ]]; then
-        CONFIG_FILE="$arg"
-        CONFIG_NEXT=false
-    fi
-done
-
-# If config file specified, check it exists
-if [[ -n "$CONFIG_FILE" ]] && [[ ! -f "$CONFIG_FILE" ]]; then
-    echo "Error: Configuration file not found: $CONFIG_FILE"
-    echo "Run './run_tests.sh --generate-config' to create a sample configuration"
-    exit 1
-fi
-
-# If no config specified and not a list/help/generate command, check for default
-if [[ -z "$CONFIG_FILE" ]]; then
-    case "$*" in
-        *--list*|*--help*|*-h*|*--generate-config*|*--show-config*|*--validate-config*)
-            # These commands don't need a config file
-            ;;
-        *)
-            if [[ -f "config.yaml" ]]; then
-                echo "Using default configuration: config.yaml"
-            else
-                echo "Warning: No configuration file specified."
-                echo "Use --config <file> or create config.yaml"
-                echo "Run './run_tests.sh --generate-config' to create a sample configuration"
-            fi
-            ;;
-    esac
-fi
+# Verify cluster connectivity (unless listing tests or showing help)
+case "$*" in
+    *--list*|*--help*|*-h*|*-l*)
+        # Skip cluster check for these commands
+        ;;
+    *)
+        echo "Checking cluster connectivity..."
+        if ! kubectl cluster-info &>/dev/null; then
+            echo "Error: Cannot connect to Kubernetes cluster"
+            echo "Please ensure your kubeconfig is configured correctly"
+            echo ""
+            echo "Current context: $(kubectl config current-context 2>/dev/null || echo 'none')"
+            exit 1
+        fi
+        echo "Cluster connection OK"
+        echo ""
+        ;;
+esac
 
 # Run the test runner
 python3 test_runner.py "$@"
