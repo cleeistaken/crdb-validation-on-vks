@@ -1253,8 +1253,9 @@ class TestRunner:
         self.vks_kubeconfig = kubeconfig or self.config.vks_kubeconfig or os.environ.get("KUBECONFIG", "vks-kubeconfig.yaml")
         self.supervisor_kubeconfig = self.config.supervisor_kubeconfig or os.environ.get("SUPERVISOR_KUBECONFIG", "")
         
-        # Current kubeconfig (will be switched based on test target)
+        # Current kubeconfig and context (will be switched based on test target)
         self.current_kubeconfig = self.vks_kubeconfig
+        self.current_context: Optional[str] = None
         
         # Create results directory with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1314,9 +1315,14 @@ class TestRunner:
         if self.current_kubeconfig:
             env["KUBECONFIG"] = self.current_kubeconfig
         
+        # If we have a context set, inject it into kubectl/helm commands
+        actual_command = command
+        if self.current_context:
+            actual_command = self._inject_context(command, self.current_context)
+        
         try:
             result = subprocess.run(
-                command,
+                actual_command,
                 shell=True,
                 capture_output=True,
                 text=True,
@@ -1329,18 +1335,70 @@ class TestRunner:
         except Exception as e:
             return -1, "", str(e)
     
+    def _inject_context(self, command: str, context: str) -> str:
+        """Inject --context flag into kubectl and helm commands."""
+        # Handle piped commands by processing each part
+        if '|' in command:
+            parts = command.split('|')
+            processed_parts = [self._inject_context_single(p.strip(), context) for p in parts]
+            return ' | '.join(processed_parts)
+        
+        # Handle && chained commands
+        if '&&' in command:
+            parts = command.split('&&')
+            processed_parts = [self._inject_context_single(p.strip(), context) for p in parts]
+            return ' && '.join(processed_parts)
+        
+        return self._inject_context_single(command, context)
+    
+    def _inject_context_single(self, command: str, context: str) -> str:
+        """Inject --context flag into a single kubectl or helm command."""
+        # Skip if context is already specified
+        if '--context' in command or '--context=' in command:
+            return command
+        
+        # Skip if command already has --kubeconfig with a different file (like validation commands)
+        # that explicitly specify their own kubeconfig
+        if '--kubeconfig=' in command and self.current_kubeconfig not in command:
+            return command
+        
+        # Inject context for kubectl commands
+        if command.strip().startswith('kubectl '):
+            return command.replace('kubectl ', f'kubectl --context={context} ', 1)
+        
+        # Inject context for helm commands  
+        if command.strip().startswith('helm '):
+            return command.replace('helm ', f'helm --kube-context={context} ', 1)
+        
+        # Handle bash -c commands
+        if command.strip().startswith('bash -c'):
+            # Extract the inner command and process it
+            inner_start = command.find("'") + 1
+            inner_end = command.rfind("'")
+            if inner_start > 0 and inner_end > inner_start:
+                inner_cmd = command[inner_start:inner_end]
+                processed_inner = self._inject_context(inner_cmd, context)
+                return f"bash -c '{processed_inner}'"
+        
+        return command
+    
     def _set_target_cluster(self, target: str):
         """Set the target cluster for kubectl commands."""
         if target == "supervisor":
-            if self.supervisor_kubeconfig:
-                self.current_kubeconfig = self.supervisor_kubeconfig
-                self.logger.info(f"  Using supervisor kubeconfig: {self.supervisor_kubeconfig}")
-            else:
-                self.logger.warning("  No supervisor kubeconfig configured, using current context")
-                self.current_kubeconfig = None
+            self.current_kubeconfig = self.supervisor_kubeconfig or None
+            self.current_context = self.config.supervisor_context or None
+            if self.current_kubeconfig:
+                self.logger.info(f"  Using supervisor kubeconfig: {self.current_kubeconfig}")
+            if self.current_context:
+                self.logger.info(f"  Using supervisor context: {self.current_context}")
+            if not self.current_kubeconfig and not self.current_context:
+                self.logger.warning("  No supervisor kubeconfig or context configured")
         else:
             self.current_kubeconfig = self.vks_kubeconfig
-            self.logger.info(f"  Using VKS kubeconfig: {self.vks_kubeconfig}")
+            self.current_context = self.config.vks_cluster_context or None
+            self.logger.info(f"  Using VKS kubeconfig: {self.current_kubeconfig}")
+            if self.current_context:
+                self.logger.info(f"  Using VKS context: {self.current_context}")
     
     def _run_test(self, test: TestDefinition) -> TestResult:
         """Execute a single test."""
@@ -1373,11 +1431,17 @@ class TestRunner:
             # Execute each step
             for i, step in enumerate(test.steps):
                 self.logger.info(f"  Step {i+1}/{len(test.steps)}: {step.name}")
+                
+                # Get the actual command that will be executed (with context injected)
+                actual_command = step.command
+                if self.current_context:
+                    actual_command = self._inject_context(step.command, self.current_context)
+                
                 all_output.append(f"\n=== Step {i+1}: {step.name} ===\n")
-                all_output.append(f"Command: {step.command}\n")
+                all_output.append(f"Command: {actual_command}\n")
                 
                 if self.dry_run:
-                    self.logger.info(f"    [DRY RUN] Would execute: {step.command}")
+                    self.logger.info(f"    [DRY RUN] Would execute: {actual_command}")
                     result.steps_passed += 1
                     continue
                 
