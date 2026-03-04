@@ -1328,11 +1328,9 @@ For {cluster_name}, please ensure the kubeconfig file exists.
 You may need to authenticate first using one of these methods:
 
     # VCF 9.0+ (using vcf CLI):
-    vcf login supervisor --server {self.config.supervisor_ip} \\
+    vcf context create {self.config.supervisor_context} \\
+        --endpoint {self.config.supervisor_ip} \\
         --username {self.config.supervisor_username}
-
-    # Then set context for the namespace:
-    vcf context use {self.config.supervisor_namespace}
 
     # Legacy method (vSphere 8.x / VCF 5.x):
     kubectl vsphere login --server={self.config.supervisor_ip} \\
@@ -1374,9 +1372,9 @@ Available contexts:
 For {cluster_name}, you may need to authenticate:
 
     # VCF 9.0+ (using vcf CLI):
-    vcf login supervisor --server {self.config.supervisor_ip} \\
+    vcf context create {self.config.supervisor_context} \\
+        --endpoint {self.config.supervisor_ip} \\
         --username {self.config.supervisor_username}
-    vcf context use {self.config.supervisor_namespace}
 
     # Legacy method (vSphere 8.x / VCF 5.x):
     kubectl vsphere login --server={self.config.supervisor_ip} \\
@@ -1428,9 +1426,9 @@ Error: {error_msg}
 Your credentials may have expired. Please re-authenticate:
 
     # VCF 9.0+ (using vcf CLI):
-    vcf login supervisor --server {self.config.supervisor_ip} \\
+    vcf context create {self.config.supervisor_context} \\
+        --endpoint {self.config.supervisor_ip} \\
         --username {self.config.supervisor_username}
-    vcf context use {self.config.supervisor_namespace}
 
     # Legacy method (vSphere 8.x / VCF 5.x):
     kubectl vsphere login --server={self.config.supervisor_ip} \\

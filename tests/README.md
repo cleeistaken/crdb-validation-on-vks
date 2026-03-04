@@ -135,8 +135,9 @@ Before running tests, authenticate to the vSphere Supervisor cluster:
 
 ```bash
 # VCF 9.0+ (using vcf CLI):
-vcf login supervisor --server <SUPERVISOR_IP> --username <USERNAME>
-vcf context use <SUPERVISOR_NAMESPACE>
+vcf context create <SUPERVISOR_CONTEXT> \
+    --endpoint <SUPERVISOR_IP> \
+    --username <USERNAME>
 
 # Legacy method (vSphere 8.x / VCF 5.x):
 kubectl vsphere login --server=<SUPERVISOR_IP> \
