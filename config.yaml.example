@@ -9,6 +9,7 @@ supervisor:
   username: "administrator@vsphere.local"   # vSphere SSO username
   namespace: "vks-namespace"                # Supervisor namespace for VKS cluster
   context: "supervisor-context"             # kubectl context name for supervisor
+  kubeconfig: "/path/to/supervisor-kubeconfig.yaml"  # Path to supervisor kubeconfig file
 
 # =============================================================================
 # VKS Cluster Configuration

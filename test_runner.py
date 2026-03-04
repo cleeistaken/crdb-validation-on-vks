@@ -43,6 +43,7 @@ class TestConfig:
     supervisor_username: str = ""
     supervisor_namespace: str = ""
     supervisor_context: str = ""
+    supervisor_kubeconfig: str = ""  # Path to supervisor kubeconfig
     
     # VKS cluster configuration
     vks_cluster_name: str = "cluster-vks"
@@ -135,6 +136,7 @@ class TestConfig:
             config.supervisor_username = sup.get("username", "")
             config.supervisor_namespace = sup.get("namespace", "")
             config.supervisor_context = sup.get("context", "")
+            config.supervisor_kubeconfig = sup.get("kubeconfig", "")
         
         # VKS Cluster
         if "vks_cluster" in data:
@@ -250,6 +252,7 @@ class TestConfig:
             "SUPERVISOR_USERNAME": self.supervisor_username,
             "SUPERVISOR_NAMESPACE": self.supervisor_namespace,
             "SUPERVISOR_CONTEXT": self.supervisor_context,
+            "SUPERVISOR_KUBECONFIG": self.supervisor_kubeconfig,
             
             # VKS Cluster
             "VKS_CLUSTER_NAME": self.vks_cluster_name,
@@ -333,6 +336,10 @@ class TestConfig:
             errors.append("supervisor.ip is required")
         if not self.supervisor_namespace:
             errors.append("supervisor.namespace is required")
+        if not self.supervisor_kubeconfig:
+            errors.append("supervisor.kubeconfig is required (path to supervisor kubeconfig file)")
+        elif not Path(self.supervisor_kubeconfig).exists():
+            errors.append(f"supervisor.kubeconfig file not found: {self.supervisor_kubeconfig}")
         if not self.vks_cluster_name:
             errors.append("vks_cluster.name is required")
         if not self.storage_class:
@@ -408,6 +415,7 @@ class TestDefinition:
     validation_commands: list = field(default_factory=list)
     cleanup_commands: list = field(default_factory=list)
     doc_path: Optional[Path] = None
+    target_cluster: str = "vks"  # "supervisor" or "vks" - which cluster to run against
 
 
 class TestRegistry:
@@ -442,7 +450,13 @@ class TestRegistry:
             description="Deploy VKS cluster using vks.yaml manifest",
             dependencies=[],
             doc_path=TEST_BASE_DIR / "00-prerequisites" / "00-VKS-CLUSTER.md",
+            target_cluster="supervisor",  # This test runs against the supervisor
             steps=[
+                TestStep(
+                    name="Verify supervisor connection",
+                    command="kubectl cluster-info",
+                    timeout=30
+                ),
                 TestStep(
                     name="Apply VKS cluster manifest",
                     command="kubectl apply -f vks.yaml",
@@ -1234,7 +1248,13 @@ class TestRunner:
         self.registry = TestRegistry(config=self.config)
         self.dry_run = dry_run
         self.verbose = verbose
-        self.kubeconfig = kubeconfig or self.config.vks_kubeconfig or os.environ.get("KUBECONFIG", "vks-kubeconfig.yaml")
+        
+        # Store both kubeconfigs
+        self.vks_kubeconfig = kubeconfig or self.config.vks_kubeconfig or os.environ.get("KUBECONFIG", "vks-kubeconfig.yaml")
+        self.supervisor_kubeconfig = self.config.supervisor_kubeconfig or os.environ.get("SUPERVISOR_KUBECONFIG", "")
+        
+        # Current kubeconfig (will be switched based on test target)
+        self.current_kubeconfig = self.vks_kubeconfig
         
         # Create results directory with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1290,9 +1310,9 @@ class TestRunner:
         # Add configuration as environment variables
         env.update(self.config.to_env_dict())
         
-        # Set kubeconfig
-        if self.kubeconfig:
-            env["KUBECONFIG"] = self.kubeconfig
+        # Set kubeconfig based on current target cluster
+        if self.current_kubeconfig:
+            env["KUBECONFIG"] = self.current_kubeconfig
         
         try:
             result = subprocess.run(
@@ -1309,6 +1329,19 @@ class TestRunner:
         except Exception as e:
             return -1, "", str(e)
     
+    def _set_target_cluster(self, target: str):
+        """Set the target cluster for kubectl commands."""
+        if target == "supervisor":
+            if self.supervisor_kubeconfig:
+                self.current_kubeconfig = self.supervisor_kubeconfig
+                self.logger.info(f"  Using supervisor kubeconfig: {self.supervisor_kubeconfig}")
+            else:
+                self.logger.warning("  No supervisor kubeconfig configured, using current context")
+                self.current_kubeconfig = None
+        else:
+            self.current_kubeconfig = self.vks_kubeconfig
+            self.logger.info(f"  Using VKS kubeconfig: {self.vks_kubeconfig}")
+    
     def _run_test(self, test: TestDefinition) -> TestResult:
         """Execute a single test."""
         result = TestResult(
@@ -1323,11 +1356,18 @@ class TestRunner:
         
         self.logger.info(f"Starting test: {test.test_id} - {test.name}")
         
+        # Set target cluster for this test
+        self._set_target_cluster(test.target_cluster)
+        
         # Create test-specific log file
         test_log_file = self.results_dir / f"{test.test_id}.log"
         
         all_output = []
         all_errors = []
+        
+        # Log which kubeconfig is being used
+        all_output.append(f"Target cluster: {test.target_cluster}\n")
+        all_output.append(f"Kubeconfig: {self.current_kubeconfig or 'default context'}\n")
         
         try:
             # Execute each step
@@ -1535,6 +1575,7 @@ supervisor:
   username: "administrator@vsphere.local"   # vSphere SSO username
   namespace: "vks-namespace"                # Supervisor namespace for VKS cluster
   context: "supervisor-context"             # kubectl context name for supervisor
+  kubeconfig: "/path/to/supervisor-kubeconfig.yaml"  # Path to supervisor kubeconfig
 
 # VKS Cluster Configuration
 vks_cluster:
