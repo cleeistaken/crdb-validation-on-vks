@@ -449,33 +449,36 @@ class TestRegistry:
     def _register_prerequisite_tests(self):
         """Register prerequisite tests."""
         cfg = self.config
+        # Supervisor namespace where VKS cluster will be deployed
+        sup_ns = cfg.supervisor_namespace
+        
         self.tests["00-VKS-CLUSTER"] = TestDefinition(
             test_id="00-VKS-CLUSTER",
             name="Deploy VKS Kubernetes Cluster",
             category="prerequisites",
-            description="Deploy VKS cluster using vks.yaml manifest",
+            description=f"Deploy VKS cluster into supervisor namespace '{sup_ns}'",
             dependencies=[],
             doc_path=TEST_BASE_DIR / "00-prerequisites" / "00-VKS-CLUSTER.md",
             target_cluster="supervisor",  # This test runs against the supervisor
             steps=[
                 TestStep(
                     name="Verify supervisor connection",
-                    command="kubectl cluster-info",
+                    command=f"kubectl get namespace {sup_ns}",
                     timeout=30
                 ),
                 TestStep(
                     name="Apply VKS cluster manifest",
-                    command="kubectl apply -f vks.yaml",
+                    command=f"kubectl apply -f vks.yaml -n {sup_ns}",
                     timeout=60
                 ),
                 TestStep(
                     name="Wait for cluster provisioning",
-                    command=f"kubectl wait --for=jsonpath='{{.status.phase}}'=Provisioned cluster/{cfg.vks_cluster_name} --timeout={cfg.timeout_cluster_provision}s",
+                    command=f"kubectl wait --for=jsonpath='{{.status.phase}}'=Provisioned cluster/{cfg.vks_cluster_name} -n {sup_ns} --timeout={cfg.timeout_cluster_provision}s",
                     timeout=cfg.timeout_cluster_provision + 20
                 ),
                 TestStep(
                     name="Get kubeconfig",
-                    command=f"kubectl get secret {cfg.vks_cluster_name}-kubeconfig -o jsonpath='{{.data.value}}' | base64 -d > {cfg.vks_kubeconfig}",
+                    command=f"kubectl get secret {cfg.vks_cluster_name}-kubeconfig -n {sup_ns} -o jsonpath='{{.data.value}}' | base64 -d > {cfg.vks_kubeconfig}",
                     timeout=30
                 ),
             ],
