@@ -483,7 +483,7 @@ class TestRegistry:
                 ),
                 TestStep(
                     name="Set VKS kubeconfig context",
-                    command=f"bash -c 'export KUBECONFIG={cfg.vks_kubeconfig}; CURRENT=$(kubectl config current-context); if [ \"$CURRENT\" != \"{cfg.vks_cluster_context}\" ]; then kubectl config delete-context {cfg.vks_cluster_context} 2>/dev/null || true; kubectl config rename-context \"$CURRENT\" {cfg.vks_cluster_context}; fi; kubectl config use-context {cfg.vks_cluster_context}'",
+                    command=f"KUBECONFIG={cfg.vks_kubeconfig} kubectl config rename-context $(KUBECONFIG={cfg.vks_kubeconfig} kubectl config current-context) {cfg.vks_cluster_context} 2>/dev/null || KUBECONFIG={cfg.vks_kubeconfig} kubectl config use-context {cfg.vks_cluster_context}",
                     timeout=30
                 ),
                 TestStep(
@@ -1593,17 +1593,23 @@ The VKS cluster kubeconfig does not exist. You have two options:
     
     def _inject_context(self, command: str, context: str) -> str:
         """Inject --context flag into kubectl and helm commands."""
-        # Handle piped commands by processing each part
+        # Handle && chained commands first
+        if '&&' in command:
+            parts = command.split('&&')
+            processed_parts = [self._inject_context(p.strip(), context) for p in parts]
+            return ' && '.join(processed_parts)
+        
+        # Handle || (logical OR) - process each part but preserve ||
+        if '||' in command:
+            parts = command.split('||')
+            processed_parts = [self._inject_context(p.strip(), context) for p in parts]
+            return ' || '.join(processed_parts)
+        
+        # Handle single pipe (but not || which was handled above)
         if '|' in command:
             parts = command.split('|')
             processed_parts = [self._inject_context_single(p.strip(), context) for p in parts]
             return ' | '.join(processed_parts)
-        
-        # Handle && chained commands
-        if '&&' in command:
-            parts = command.split('&&')
-            processed_parts = [self._inject_context_single(p.strip(), context) for p in parts]
-            return ' && '.join(processed_parts)
         
         return self._inject_context_single(command, context)
     
@@ -1616,6 +1622,10 @@ The VKS cluster kubeconfig does not exist. You have two options:
         # Skip if command already has --kubeconfig with a different file (like validation commands)
         # that explicitly specify their own kubeconfig
         if '--kubeconfig=' in command and self.current_kubeconfig not in command:
+            return command
+        
+        # Skip if command sets KUBECONFIG env var (e.g., "KUBECONFIG=file kubectl ...")
+        if command.strip().startswith('KUBECONFIG='):
             return command
         
         # Inject context for kubectl commands
@@ -1640,17 +1650,23 @@ The VKS cluster kubeconfig does not exist. You have two options:
     
     def _inject_insecure_flag(self, command: str) -> str:
         """Inject --insecure-skip-tls-verify flag into kubectl and helm commands."""
-        # Handle piped commands
-        if '|' in command:
+        # Handle && chained commands first (before pipe handling)
+        if '&&' in command:
+            parts = command.split('&&')
+            processed_parts = [self._inject_insecure_flag(p.strip()) for p in parts]
+            return ' && '.join(processed_parts)
+        
+        # Handle || (logical OR) - don't split these
+        if '||' in command:
+            parts = command.split('||')
+            processed_parts = [self._inject_insecure_flag(p.strip()) for p in parts]
+            return ' || '.join(processed_parts)
+        
+        # Handle single pipe (but not ||)
+        if '|' in command and '||' not in command:
             parts = command.split('|')
             processed_parts = [self._inject_insecure_flag_single(p.strip()) for p in parts]
             return ' | '.join(processed_parts)
-        
-        # Handle && chained commands
-        if '&&' in command:
-            parts = command.split('&&')
-            processed_parts = [self._inject_insecure_flag_single(p.strip()) for p in parts]
-            return ' && '.join(processed_parts)
         
         return self._inject_insecure_flag_single(command)
     
@@ -1658,6 +1674,10 @@ The VKS cluster kubeconfig does not exist. You have two options:
         """Inject --insecure-skip-tls-verify flag into a single kubectl or helm command."""
         # Skip if already has insecure flag
         if '--insecure-skip-tls-verify' in command:
+            return command
+        
+        # Skip if command sets KUBECONFIG env var (manages its own config)
+        if command.strip().startswith('KUBECONFIG='):
             return command
         
         # Inject for kubectl commands (after kubectl and any --context flag)
