@@ -12,8 +12,27 @@
 
 - VMware WCP 3.6.0 environment available
 - `kubectl` CLI installed and configured to access the Supervisor cluster
+- For VCF 9.0+: `vcf` CLI installed (see [VCF CLI documentation](https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-0/building-your-cloud-applications/getting-started-with-the-tools-for-building-applications/installing-and-using-vcf-cli-v9.html))
 - Access to a vSphere Namespace with appropriate permissions
 - Storage class `vsan-esa-default-policy-raid5` available
+
+## Authentication
+
+Before running this test, authenticate to the Supervisor cluster:
+
+```bash
+# VCF 9.0+ (using vcf CLI):
+vcf login supervisor --server <SUPERVISOR_IP> --username <USERNAME>
+vcf context use <SUPERVISOR_NAMESPACE>
+
+# Legacy method (vSphere 8.x / VCF 5.x):
+kubectl vsphere login --server=<SUPERVISOR_IP> \
+    --vsphere-username=<USERNAME> \
+    --tanzu-kubernetes-cluster-namespace=<SUPERVISOR_NAMESPACE>
+
+# Verify authentication
+kubectl config get-contexts
+```
 
 ## Environment Setup
 

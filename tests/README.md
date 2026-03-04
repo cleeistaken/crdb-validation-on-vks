@@ -129,6 +129,28 @@ export VKS_CLUSTER_NAME="cluster-vks"
 
 ## Quick Start
 
+### Step 0: Authenticate to Supervisor Cluster
+
+Before running tests, authenticate to the vSphere Supervisor cluster:
+
+```bash
+# VCF 9.0+ (using vcf CLI):
+vcf login supervisor --server <SUPERVISOR_IP> --username <USERNAME>
+vcf context use <SUPERVISOR_NAMESPACE>
+
+# Legacy method (vSphere 8.x / VCF 5.x):
+kubectl vsphere login --server=<SUPERVISOR_IP> \
+    --vsphere-username=<USERNAME> \
+    --tanzu-kubernetes-cluster-namespace=<SUPERVISOR_NAMESPACE>
+
+# Verify authentication
+kubectl config get-contexts
+```
+
+For more info on VCF CLI: https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-0/building-your-cloud-applications/getting-started-with-the-tools-for-building-applications/installing-and-using-vcf-cli-v9.html
+
+### Step 1-4: Deploy and Access VKS Cluster
+
 ```bash
 # 1. Deploy VKS cluster
 kubectl apply -f vks.yaml

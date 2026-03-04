@@ -1325,13 +1325,24 @@ class TestRunner:
 Kubeconfig file not found: {kubeconfig}
 
 For {cluster_name}, please ensure the kubeconfig file exists.
-If using VMware vSphere, you may need to authenticate first:
+You may need to authenticate first using one of these methods:
 
-    kubectl vsphere login --server=<SUPERVISOR_IP> \\
-        --vsphere-username=<USERNAME> \\
-        --tanzu-kubernetes-cluster-namespace=<NAMESPACE>
+    # VCF 9.0+ (using vcf CLI):
+    vcf login supervisor --server {self.config.supervisor_ip} \\
+        --username {self.config.supervisor_username}
 
-Or copy the kubeconfig from your vSphere environment.
+    # Then set context for the namespace:
+    vcf context use {self.config.supervisor_namespace}
+
+    # Legacy method (vSphere 8.x / VCF 5.x):
+    kubectl vsphere login --server={self.config.supervisor_ip} \\
+        --vsphere-username={self.config.supervisor_username} \\
+        --tanzu-kubernetes-cluster-namespace={self.config.supervisor_namespace}
+
+After login, verify your contexts with:
+    kubectl config get-contexts
+
+For more info on VCF CLI: https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-0/building-your-cloud-applications/getting-started-with-the-tools-for-building-applications/installing-and-using-vcf-cli-v9.html
 """
         
         # Check if context exists in kubeconfig
@@ -1362,16 +1373,23 @@ Available contexts:
 
 For {cluster_name}, you may need to authenticate:
 
-    # For VMware vSphere Supervisor:
+    # VCF 9.0+ (using vcf CLI):
+    vcf login supervisor --server {self.config.supervisor_ip} \\
+        --username {self.config.supervisor_username}
+    vcf context use {self.config.supervisor_namespace}
+
+    # Legacy method (vSphere 8.x / VCF 5.x):
     kubectl vsphere login --server={self.config.supervisor_ip} \\
         --vsphere-username={self.config.supervisor_username} \\
         --tanzu-kubernetes-cluster-namespace={self.config.supervisor_namespace}
 
-    # This will create/update contexts in your kubeconfig.
-    # After login, verify with:
+After login, verify your contexts with:
     kubectl config get-contexts
 
-If the context name is different, update your config.yaml with the correct context name.
+If the context name is different from what you specified in config.yaml,
+update the 'context' field with the correct name from the list above.
+
+For more info on VCF CLI: https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-0/building-your-cloud-applications/getting-started-with-the-tools-for-building-applications/installing-and-using-vcf-cli-v9.html
 """
             except subprocess.TimeoutExpired:
                 return False, f"Timeout checking contexts in kubeconfig: {kubeconfig}"
@@ -1409,6 +1427,12 @@ Error: {error_msg}
 
 Your credentials may have expired. Please re-authenticate:
 
+    # VCF 9.0+ (using vcf CLI):
+    vcf login supervisor --server {self.config.supervisor_ip} \\
+        --username {self.config.supervisor_username}
+    vcf context use {self.config.supervisor_namespace}
+
+    # Legacy method (vSphere 8.x / VCF 5.x):
     kubectl vsphere login --server={self.config.supervisor_ip} \\
         --vsphere-username={self.config.supervisor_username} \\
         --tanzu-kubernetes-cluster-namespace={self.config.supervisor_namespace}
