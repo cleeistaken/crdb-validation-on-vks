@@ -49,7 +49,7 @@ class TestConfig:
     # VKS cluster configuration
     vks_cluster_name: str = "cluster-vks"
     vks_cluster_namespace: str = "crdb-cluster"
-    vks_cluster_context: str = "vks-cluster"  # Context name for the VKS cluster kubeconfig
+    vks_cluster_context: str = ""  # Leave empty to use kubeconfig's current-context
     vks_kubeconfig: str = "vks-kubeconfig.yaml"
     vks_version: str = "v1.35.0+vmware.2-vkr.4"
     vks_version_upgrade: str = ""
@@ -146,7 +146,7 @@ class TestConfig:
             vks = data["vks_cluster"]
             config.vks_cluster_name = vks.get("name", "cluster-vks")
             config.vks_cluster_namespace = vks.get("namespace", "crdb-cluster")
-            config.vks_cluster_context = vks.get("context", "vks-cluster")
+            config.vks_cluster_context = vks.get("context", "")  # Empty = use kubeconfig's current-context
             config.vks_kubeconfig = vks.get("kubeconfig", "vks-kubeconfig.yaml")
             config.vks_version = vks.get("version", "v1.35.0+vmware.2-vkr.4")
             config.vks_version_upgrade = vks.get("version_upgrade", "")
@@ -482,19 +482,24 @@ class TestRegistry:
                     timeout=30
                 ),
                 TestStep(
-                    name="Set VKS kubeconfig context",
-                    command=f"KUBECONFIG={cfg.vks_kubeconfig} kubectl config rename-context $(KUBECONFIG={cfg.vks_kubeconfig} kubectl config current-context) {cfg.vks_cluster_context} 2>/dev/null || KUBECONFIG={cfg.vks_kubeconfig} kubectl config use-context {cfg.vks_cluster_context}",
+                    name="List VKS kubeconfig contexts",
+                    command=f"kubectl --kubeconfig={cfg.vks_kubeconfig} config get-contexts",
+                    timeout=30
+                ),
+                TestStep(
+                    name="Set current context in VKS kubeconfig",
+                    command=f"kubectl --kubeconfig={cfg.vks_kubeconfig} config use-context $(kubectl --kubeconfig={cfg.vks_kubeconfig} config get-contexts -o name | head -1)",
                     timeout=30
                 ),
                 TestStep(
                     name="Verify VKS cluster access",
-                    command=f"kubectl --kubeconfig={cfg.vks_kubeconfig} --context={cfg.vks_cluster_context} get nodes",
+                    command=f"kubectl --kubeconfig={cfg.vks_kubeconfig} get nodes",
                     timeout=60
                 ),
             ],
             validation_commands=[
-                f"kubectl --kubeconfig={cfg.vks_kubeconfig} --context={cfg.vks_cluster_context} get nodes",
-                f"kubectl --kubeconfig={cfg.vks_kubeconfig} --context={cfg.vks_cluster_context} cluster-info",
+                f"kubectl --kubeconfig={cfg.vks_kubeconfig} get nodes",
+                f"kubectl --kubeconfig={cfg.vks_kubeconfig} cluster-info",
             ]
         )
     
@@ -1425,15 +1430,18 @@ For more info: https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-la
                 return False, f"Error checking kubeconfig: {e}"
         
         # Verify we can connect to the cluster
+        env = os.environ.copy()
+        if kubeconfig:
+            env["KUBECONFIG"] = kubeconfig
+        
+        cmd = "kubectl"
         if context:
-            env = os.environ.copy()
-            if kubeconfig:
-                env["KUBECONFIG"] = kubeconfig
-            
-            cmd = f"kubectl --context={context}"
-            if self.config.supervisor_insecure_skip_tls if cluster_name == "supervisor" else self.config.vks_insecure_skip_tls:
-                cmd += " --insecure-skip-tls-verify"
-            cmd += " cluster-info --request-timeout=10s"
+            cmd += f" --context={context}"
+        if self.config.supervisor_insecure_skip_tls if cluster_name == "supervisor" else self.config.vks_insecure_skip_tls:
+            cmd += " --insecure-skip-tls-verify"
+        cmd += " cluster-info --request-timeout=10s"
+        
+        if kubeconfig or context:
             
             try:
                 result = subprocess.run(
@@ -1446,10 +1454,11 @@ For more info: https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-la
                 )
                 if result.returncode != 0:
                     error_msg = result.stderr.strip()
+                    context_info = f" (context: {context})" if context else ""
                     # Check for common auth errors
                     if "Unauthorized" in error_msg or "forbidden" in error_msg.lower():
                         return False, f"""
-Authentication failed for {cluster_name} (context: {context})
+Authentication failed for {cluster_name}{context_info}
 
 Error: {error_msg}
 
@@ -1469,7 +1478,7 @@ Your credentials may have expired. Please re-authenticate:
 """
                     elif "connection refused" in error_msg.lower() or "no such host" in error_msg.lower():
                         return False, f"""
-Cannot connect to {cluster_name} cluster (context: {context})
+Cannot connect to {cluster_name} cluster{context_info}
 
 Error: {error_msg}
 
